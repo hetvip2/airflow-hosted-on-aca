@@ -47,6 +47,27 @@ with DAG(
             title="Number of parallel shards",
             description="How many ACA Job executions to fan out in parallel.",
         ),
+        "command": Param(
+            default=None,
+            type=["null", "array"],
+            items={"type": "string"},
+            title="Command override (optional)",
+            description='Entrypoint to run for every shard, e.g. ["python", "main.py"].',
+        ),
+        "args": Param(
+            default=None,
+            type=["null", "array"],
+            items={"type": "string"},
+            title="Args override (optional)",
+            description='Arguments passed to every shard, e.g. ["--mode", "batch"].',
+        ),
+        "env": Param(
+            default=None,
+            type=["null", "object"],
+            title="Extra environment variables (optional)",
+            description='Env vars applied to every shard (merged with each shard\'s '
+            'SHARD_INDEX / SHARD_TOTAL), e.g. {"DATASET": "sales-2026"}.',
+        ),
     },
 ) as dag:
     start = EmptyOperator(task_id="start")
@@ -54,8 +75,16 @@ with DAG(
 
     @task
     def make_shards(params: dict | None = None) -> list[dict[str, str]]:
-        n = int((params or {}).get("shards", 5))
-        return [{"SHARD_INDEX": str(i), "SHARD_TOTAL": str(n)} for i in range(n)]
+        params = params or {}
+        n = int(params.get("shards", 5))
+        extra_env = params.get("env") or {}
+        shard_env = []
+        for i in range(n):
+            env = {str(k): str(v) for k, v in extra_env.items()}
+            env["SHARD_INDEX"] = str(i)
+            env["SHARD_TOTAL"] = str(n)
+            shard_env.append(env)
+        return shard_env
 
     shards = make_shards()
 
@@ -64,6 +93,8 @@ with DAG(
         subscription_id="{{ var.value.azure_subscription_id }}",
         resource_group="{{ var.value.aca_resource_group }}",
         job_name="{{ var.value.aca_job_name }}",
+        command="{{ params.command }}",
+        args="{{ params.args }}",
         azure_conn_id="{{ var.value.get('azure_conn_id', '') }}",
         deferrable=True,
         poll_interval_seconds=15,
