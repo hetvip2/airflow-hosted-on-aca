@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+name: airflow-hosted-on-aca
+metadata:
+  template: airflow-hosted-on-aca@1.0.0
+
+# This template hosts Airflow itself (web + scheduler + triggerer) on Azure
+# Container Apps and ships a sample ACA Job for Airflow to drive. The Airflow
+# image is the stock apache/airflow image; your DAGs and plugins are delivered
+# to a mounted Azure Files share by the postprovision hook below, so no custom
+# image build (ACR) is required.
+
+hooks:
+  postprovision:
+    posix:
+      shell: sh
+      run: ./scripts/upload-dags.sh
+      interactive: false
+      continueOnError: false
+    windows:
+      shell: pwsh
+      run: ./scripts/upload-dags.ps1
+      interactive: false
+      continueOnError: false

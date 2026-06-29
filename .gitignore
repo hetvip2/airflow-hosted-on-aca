@@ -1,0 +1,19 @@
+# azd
+.azure/
+
+# Python
+__pycache__/
+*.pyc
+
+# Local demo / Airflow runtime
+.venv-airflow/
+.airflow-home/
+
+# Packaging / pytest
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Local secrets
+.env

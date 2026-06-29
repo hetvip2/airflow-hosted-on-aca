@@ -1,0 +1,104 @@
+### Local "you host Airflow" stack.
+#
+# Brings up the same hosted Airflow you deploy to Azure: Postgres metadata DB +
+# webserver + scheduler + triggerer (LocalExecutor), with the ACA Jobs operator
+# and example DAGs baked into the image. Airflow then drives your Azure Container
+# Apps Jobs.
+#
+# Quick start:
+#   1. cp .env.example .env   and fill in your Azure values
+#   2. docker compose up --build
+#   3. open http://localhost:8080  (user: airflow / pass: airflow)
+#
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: airflow-hosted-on-aca:local
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+    # Make every operator deferrable by default (frees worker slots while ACA runs).
+    AIRFLOW__OPERATORS__DEFAULT_DEFERRABLE: "true"
+    # --- Point the operator at your ACA Job (exposed to DAGs as Airflow Variables) ---
+    AIRFLOW_VAR_AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID:-}
+    AIRFLOW_VAR_ACA_RESOURCE_GROUP: ${ACA_RESOURCE_GROUP:-}
+    AIRFLOW_VAR_ACA_JOB_NAME: ${ACA_JOB_NAME:-}
+    # --- Azure auth for the operator (pick ONE) ---
+    # A) a short-lived ARM token (quickest): az account get-access-token ...
+    AZURE_ACCESS_TOKEN: ${AZURE_ACCESS_TOKEN:-}
+    # B) a service principal, picked up by DefaultAzureCredential:
+    AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-}
+    AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:-}
+    AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
+  volumes:
+    # Live-edit DAGs/plugins without rebuilding (image already has a baked copy).
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/plugins:/opt/airflow/plugins
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 10
+    restart: always
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username airflow --password airflow \
+          --firstname Air --lastname Flow --role Admin --email admin@example.com \
+          || true
+    restart: on-failure
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    restart: always
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: always
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    command: triggerer
+    restart: always
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+volumes:
+  postgres-db:

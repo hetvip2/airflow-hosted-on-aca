@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "namePrefix": {
+      "value": "${NAME_PREFIX=aflo}"
+    },
+    "postgresAdminUser": {
+      "value": "${POSTGRES_ADMIN_USER=airflowadmin}"
+    },
+    "postgresAdminPassword": {
+      "value": "${POSTGRES_ADMIN_PASSWORD}"
+    },
+    "airflowAdminUser": {
+      "value": "${AIRFLOW_ADMIN_USER=airflow}"
+    },
+    "airflowAdminPassword": {
+      "value": "${AIRFLOW_ADMIN_PASSWORD}"
+    }
+  }
+}
