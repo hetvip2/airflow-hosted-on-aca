@@ -193,6 +193,57 @@ recommended production path with no secrets to manage.
 
 ---
 
+## Integrating an external platform
+
+A common scenario: the customer **doesn't already run an orchestrator**, so this
+template *becomes* their orchestration layer — and an existing external system
+(their app, data platform, or SaaS) needs to kick off the work or react to it.
+Airflow is built for exactly this. The external system never has to "be" Airflow;
+it just triggers a DAG or exchanges data with one. Three standard patterns:
+
+### 1. Trigger Airflow from outside via its REST API
+
+Any external system can start a workflow with an HTTPS call to the hosted Airflow.
+The DAG then fans the work out to ACA Jobs:
+
+```bash
+curl -X POST "https://<your-airflow-web-url>/api/v1/dags/aca_jobs_example/dagRuns" \
+  -H "Content-Type: application/json" \
+  -u "<user>:<password>" \
+  -d '{"conf": {"job_name": "nightly-etl", "env": {"DATASET": "sales-2026"}}}'
+```
+
+This is the most common integration: the customer's platform passes its arguments
+in `conf`, and Airflow orchestrates the ACA Job(s). (Airflow's
+[stable REST API](https://airflow.apache.org/docs/apache-airflow/stable/stable-rest-api-ref.html)
+also lists runs, fetches status, and reads logs, so the caller can poll results.)
+
+### 2. Event-driven trigger
+
+Let an Azure event start the pipeline — e.g. a file landing in Blob Storage or a
+message on a bus. Wire **Event Grid → Logic App / Azure Function → Airflow REST
+API** (pattern 1), so a customer's upstream system triggers a run with no manual
+step. The same REST endpoint above is the integration point.
+
+### 3. Integrate inside the DAG
+
+Put the external system *in the pipeline* as tasks: a DAG can read from an
+external queue/storage/API, run the ACA Job, then write results back or send a
+webhook/notification on completion. This keeps the integration as code next to the
+orchestration, version-controlled with the rest of the DAG.
+
+> In every pattern: **external platform = the trigger / data source**, **this
+> hosted Airflow = the orchestrator**, **ACA Jobs = the execution.** Both the
+> orchestration and the job execution stay on Azure; the customer's existing
+> system simply plugs in.
+
+> The template ships the orchestration core (Airflow + operator + sample job) and
+> exposes Airflow's REST API for integration. A connector to a *specific* external
+> product is a small, customer-specific add-on (a REST call or a DAG task), not a
+> change to this architecture.
+
+---
+
 ## Project structure
 
 ```
